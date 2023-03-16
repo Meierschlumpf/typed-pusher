@@ -1,4 +1,3 @@
-import Pusher from "pusher";
 import { z } from "zod";
 import { ChannelMessages, ChannelReturn, ChannelReturnWithInputSchema } from "./creator";
 import {
@@ -6,101 +5,92 @@ import {
   ChannelInputSchema,
   MessageInput,
   MessageInputSchema,
-  TriggerPayloadSchema,
+  SubscribePayloadSchema,
   ZodInferIfDefined,
 } from "./zod";
 
-type TriggerProps<
+type SubscribeProps<
   TChannelInput extends ChannelInput,
   TMessageInput extends MessageInput,
-  TTriggerPayloadSchema extends TriggerPayloadSchema
+  TSubscribePayloadSchema extends SubscribePayloadSchema
 > = {
   channelInput: TChannelInput;
   channelKey: string;
   messageInput: TMessageInput;
   messageKey: string;
-  triggerPayloadSchema: TTriggerPayloadSchema;
-  pusher: Pusher;
+  subscribePayloadSchema: TSubscribePayloadSchema;
 };
 
-type ConstructTriggerCallReturn<TTriggerPayloadSchema extends TriggerPayloadSchema> = (
-  payload: z.infer<TTriggerPayloadSchema>
+type ConstructSubscribeCallReturn<TSubscribePayloadSchema extends SubscribePayloadSchema> = (
+  callback: (input: z.infer<TSubscribePayloadSchema>) => void | Promise<void>
 ) => void;
 
-const constructTriggerCall =
+const constructSubscribeCall =
   <
     TChannelInput extends ChannelInput,
     TMessageInput extends MessageInput,
-    TTriggerPayloadSchema extends TriggerPayloadSchema
+    TSubscribePayloadSchema extends SubscribePayloadSchema
   >(
-    props: TriggerProps<TChannelInput, TMessageInput, TTriggerPayloadSchema>
+    props: SubscribeProps<TChannelInput, TMessageInput, TSubscribePayloadSchema>
   ) =>
-  (payload: z.infer<TTriggerPayloadSchema>) => {
+  (callback: (input: z.infer<TSubscribePayloadSchema>) => void | Promise<void>) => {
     // TODO: continue
-    props.triggerPayloadSchema.parse(payload);
-    props.pusher.trigger(
-      generateKey(props.channelKey, props.channelInput),
-      generateKey(props.messageKey, props.messageInput),
-      payload
-    );
+    callback({});
   };
 
 type ConstructMessageCallProps<
   TChannelInput extends ChannelInput,
   TMessageInputSchema extends MessageInputSchema,
-  TTriggerPayloadSchema extends TriggerPayloadSchema
+  TSubscribePayloadSchema extends SubscribePayloadSchema
 > = {
   channelInput: TChannelInput;
   channelKey: string;
   messageInputSchema: TMessageInputSchema;
-  triggerPayloadSchema: TTriggerPayloadSchema;
-  pusher: Pusher;
+  subscribePayloadSchema: TSubscribePayloadSchema;
 };
 
-type MessageCallReturn<TTriggerPayloadSchema extends TriggerPayloadSchema> = {
-  trigger: ConstructTriggerCallReturn<TTriggerPayloadSchema>;
+type MessageCallReturn<TSubscribePayloadSchema extends SubscribePayloadSchema> = {
+  subscribe: ConstructSubscribeCallReturn<TSubscribePayloadSchema>;
 };
 type ConstructMessageCallReturn<
   TMessageInputSchema extends MessageInputSchema,
-  TTriggerPayloadSchema extends TriggerPayloadSchema
+  TSubscribePayloadSchema extends SubscribePayloadSchema
 > = TMessageInputSchema extends undefined
-  ? MessageCallReturn<TTriggerPayloadSchema>
-  : (input: ZodInferIfDefined<TMessageInputSchema>) => MessageCallReturn<TTriggerPayloadSchema>;
+  ? MessageCallReturn<TSubscribePayloadSchema>
+  : (input: ZodInferIfDefined<TMessageInputSchema>) => MessageCallReturn<TSubscribePayloadSchema>;
 
 const constructMessageCall = <
   TChannelInput extends ChannelInput,
   TMessageInputSchema extends MessageInputSchema,
-  TTriggerPayloadSchema extends TriggerPayloadSchema,
+  TSubscribePayloadSchema extends SubscribePayloadSchema,
   TMessageKey extends string
 >(
-  props: ConstructMessageCallProps<TChannelInput, TMessageInputSchema, TTriggerPayloadSchema>,
+  props: ConstructMessageCallProps<TChannelInput, TMessageInputSchema, TSubscribePayloadSchema>,
   messageKey: TMessageKey
-): ConstructMessageCallReturn<TMessageInputSchema, TTriggerPayloadSchema> => {
+): ConstructMessageCallReturn<TMessageInputSchema, TSubscribePayloadSchema> => {
   if (props.messageInputSchema === undefined) {
     return {
-      trigger: constructTriggerCall({
+      subscribe: constructSubscribeCall({
         channelInput: props.channelInput,
         channelKey: props.channelKey,
         messageInput: undefined,
         messageKey,
-        triggerPayloadSchema: props.triggerPayloadSchema,
-        pusher: props.pusher,
+        subscribePayloadSchema: props.subscribePayloadSchema,
       }),
-    } as ConstructMessageCallReturn<TMessageInputSchema, TTriggerPayloadSchema>;
+    } as ConstructMessageCallReturn<TMessageInputSchema, TSubscribePayloadSchema>;
   }
 
   return ((input: ZodInferIfDefined<TMessageInputSchema>) => {
     return {
-      trigger: constructTriggerCall({
+      subscribe: constructSubscribeCall({
         channelInput: props.channelInput,
         channelKey: props.channelKey,
         messageInput: input,
         messageKey,
-        triggerPayloadSchema: props.triggerPayloadSchema,
-        pusher: props.pusher,
+        subscribePayloadSchema: props.subscribePayloadSchema,
       }),
     };
-  }) as ConstructMessageCallReturn<TMessageInputSchema, TTriggerPayloadSchema>;
+  }) as ConstructMessageCallReturn<TMessageInputSchema, TSubscribePayloadSchema>;
 };
 
 type ChannelCallReturn<TMessages extends ChannelReturn<ChannelMessages>> = {
@@ -124,8 +114,7 @@ const constructChannelCall = <
 >(
   channelKey: TChannelKey,
   messages: TMessages,
-  channelInputSchema: TChannelInputSchema,
-  pusher: Pusher
+  channelInputSchema: TChannelInputSchema
 ): ConstructChannelCallReturn<TMessages, TChannelInputSchema> => {
   if (channelInputSchema === undefined) {
     return genericObjectEntries(messages).reduce((prev, [messageKey, message]) => {
@@ -134,8 +123,7 @@ const constructChannelCall = <
           channelInput: undefined,
           channelKey,
           messageInputSchema: message._messageInputSchema,
-          triggerPayloadSchema: message._subscriptionInputSchema,
-          pusher,
+          subscribePayloadSchema: message._subscriptionInputSchema,
         },
         messageKey as string
       ) as any;
@@ -156,8 +144,7 @@ const constructChannelCall = <
           channelInput: input,
           channelKey,
           messageInputSchema: message._messageInputSchema,
-          triggerPayloadSchema: message._subscriptionInputSchema,
-          pusher,
+          subscribePayloadSchema: message._subscriptionInputSchema,
         },
         messageKey as string
       ) as any;
@@ -173,26 +160,20 @@ type RootChannels = Record<
   string,
   ChannelReturnWithInputSchema<ChannelMessages, ChannelInputSchema>
 >;
-export type Server<TRootChannels extends RootChannels> = {
+export type Client<TRootChannels extends RootChannels> = {
   [key in keyof TRootChannels]: ConstructChannelCallReturn<
     TRootChannels[key]["_inner"],
     TRootChannels[key]["_channelInputSchema"]
   >;
 };
 
-export const createPusherServer = <TRootChannels extends RootChannels>(
-  root: TRootChannels,
-  options: Pusher.Options
-) => {
-  const pusher = new Pusher(options);
-
+export const createPusherClient = <TRootChannels extends RootChannels>(root: TRootChannels) => {
   return genericObjectEntries(root).reduce((prev, [channelKey, channel]) => {
     prev[channelKey] = constructChannelCall(
       channelKey as string,
       channel._inner,
-      channel._channelInputSchema,
-      pusher
+      channel._channelInputSchema
     ) as any;
     return prev;
-  }, {} as Server<TRootChannels>) as Server<TRootChannels>;
+  }, {} as Client<TRootChannels>) as Client<TRootChannels>;
 };

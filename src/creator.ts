@@ -11,11 +11,11 @@ type InputReturnType<
 > = TMessageInputSchema extends undefined
   ? {
       _messageInputSchema: undefined;
-      _triggerInputSchema: TTriggerPayloadSchema;
+      _subscriptionInputSchema: TTriggerPayloadSchema;
     }
   : {
       _messageInputSchema: TMessageInputSchema;
-      _triggerInputSchema: TTriggerPayloadSchema;
+      _subscriptionInputSchema: TTriggerPayloadSchema;
     };
 
 export const message = <TMessageInputSchema extends MessageInputSchema = undefined>(
@@ -27,7 +27,7 @@ export const message = <TMessageInputSchema extends MessageInputSchema = undefin
     return () =>
       ({
         _messageInputSchema: messageInputSchema,
-        _triggerInputSchema: triggerInputSchema,
+        _subscriptionInputSchema: triggerInputSchema,
       } as InputReturnType<TTriggerPayloadSchema, TMessageInputSchema>);
   };
 
@@ -38,7 +38,7 @@ export const message = <TMessageInputSchema extends MessageInputSchema = undefin
 
 export type ChannelReturn<TMessages extends Record<string, InputReturn>> = {
   [key in keyof TMessages]: InputReturnType<
-    ReturnType<TMessages[key]>["_triggerInputSchema"],
+    ReturnType<TMessages[key]>["_subscriptionInputSchema"],
     ReturnType<TMessages[key]>["_messageInputSchema"]
   >;
 };

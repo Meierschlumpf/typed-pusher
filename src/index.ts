@@ -1,2 +1,3 @@
 export { channel, message } from "./creator";
-export { createPusherServer, Server } from "./server";
+export { createPusherServer } from "./server";
+export { createPusherClient } from "./client";

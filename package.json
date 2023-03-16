@@ -23,6 +23,7 @@
     "typescript": "^4.9.5"
   },
   "dependencies": {
+    "pusher": "^5.1.2",
     "zod": "^3.21.4"
   }
 }
