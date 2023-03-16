@@ -1,0 +1,28 @@
+{
+  "name": "typed-pusher",
+  "version": "0.0.1",
+  "description": "A wrapper to properly type pusher.js",
+  "main": "src/index.ts",
+  "scripts": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Meierschlumpf/typed-pusher.git"
+  },
+  "keywords": [
+    "pusher",
+    "typescript"
+  ],
+  "author": "Meierschlumpf",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Meierschlumpf/typed-pusher/issues"
+  },
+  "homepage": "https://github.com/Meierschlumpf/typed-pusher#readme",
+  "devDependencies": {
+    "@types/node": "^18.15.3",
+    "typescript": "^4.9.5"
+  },
+  "dependencies": {
+    "zod": "^3.21.4"
+  }
+}
