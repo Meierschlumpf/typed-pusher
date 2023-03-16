@@ -1,3 +1,5 @@
+import PusherJs from "pusher-js";
+import * as PusherTypes from "pusher-js";
 import { z } from "zod";
 import { ChannelMessages, ChannelReturn, ChannelReturnWithInputSchema } from "./creator";
 import {
@@ -8,6 +10,8 @@ import {
   SubscribePayloadSchema,
   ZodInferIfDefined,
 } from "./zod";
+import { genericObjectEntries } from "./helpers";
+import { generateKey } from "./keys";
 
 type SubscribeProps<
   TChannelInput extends ChannelInput,
@@ -19,11 +23,12 @@ type SubscribeProps<
   messageInput: TMessageInput;
   messageKey: string;
   subscribePayloadSchema: TSubscribePayloadSchema;
+  pusher: PusherJs;
 };
 
 type ConstructSubscribeCallReturn<TSubscribePayloadSchema extends SubscribePayloadSchema> = (
   callback: (input: z.infer<TSubscribePayloadSchema>) => void | Promise<void>
-) => void;
+) => () => void;
 
 const constructSubscribeCall =
   <
@@ -32,10 +37,18 @@ const constructSubscribeCall =
     TSubscribePayloadSchema extends SubscribePayloadSchema
   >(
     props: SubscribeProps<TChannelInput, TMessageInput, TSubscribePayloadSchema>
-  ) =>
+  ): ConstructSubscribeCallReturn<TSubscribePayloadSchema> =>
   (callback: (input: z.infer<TSubscribePayloadSchema>) => void | Promise<void>) => {
     // TODO: continue
-    callback({});
+    const channel = createOrGetChannel(props.channelKey, props.pusher);
+
+    channel.bind(generateKey(props.messageKey, props.messageInput), callback);
+
+    return () => {
+      channel.unbind(generateKey(props.messageKey, props.messageInput), callback);
+      channel.unsubscribe();
+      removeChannel(props.channelKey);
+    };
   };
 
 type ConstructMessageCallProps<
@@ -47,6 +60,7 @@ type ConstructMessageCallProps<
   channelKey: string;
   messageInputSchema: TMessageInputSchema;
   subscribePayloadSchema: TSubscribePayloadSchema;
+  pusher: PusherJs;
 };
 
 type MessageCallReturn<TSubscribePayloadSchema extends SubscribePayloadSchema> = {
@@ -76,6 +90,7 @@ const constructMessageCall = <
         messageInput: undefined,
         messageKey,
         subscribePayloadSchema: props.subscribePayloadSchema,
+        pusher: props.pusher,
       }),
     } as ConstructMessageCallReturn<TMessageInputSchema, TSubscribePayloadSchema>;
   }
@@ -88,6 +103,7 @@ const constructMessageCall = <
         messageInput: input,
         messageKey,
         subscribePayloadSchema: props.subscribePayloadSchema,
+        pusher: props.pusher,
       }),
     };
   }) as ConstructMessageCallReturn<TMessageInputSchema, TSubscribePayloadSchema>;
@@ -107,6 +123,46 @@ type ConstructChannelCallReturn<
   ? ChannelCallReturn<TMessages>
   : (input: ZodInferIfDefined<TChannelInputSchema>) => ChannelCallReturn<TMessages>;
 
+const channelMap = new Map<
+  string,
+  {
+    count: number;
+    channel: PusherTypes.Channel;
+  }
+>();
+
+const createOrGetChannel = (key: string, pusher: PusherJs) => {
+  if (channelMap.has(key)) {
+    console.log(`getting channel ${key}`);
+    const { channel, count } = channelMap.get(key)!;
+    channelMap.set(key, {
+      count: count + 1,
+      channel,
+    });
+    return channel;
+  }
+
+  console.log(`creating channel ${key}`);
+
+  const channel = pusher.subscribe(key);
+  channelMap.set(key, { channel, count: 1 });
+
+  return channel;
+};
+
+const removeChannel = (key: string) => {
+  console.log(`removing channel ${key}`);
+  const { count, channel } = channelMap.get(key)!;
+  if (count <= 1) {
+    return channelMap.delete(key);
+  }
+
+  channelMap.set(key, {
+    count: count - 1,
+    channel,
+  });
+};
+
 const constructChannelCall = <
   TChannelKey extends string,
   TMessages extends ChannelReturn<ChannelMessages>,
@@ -114,7 +170,8 @@ const constructChannelCall = <
 >(
   channelKey: TChannelKey,
   messages: TMessages,
-  channelInputSchema: TChannelInputSchema
+  channelInputSchema: TChannelInputSchema,
+  pusher: PusherJs
 ): ConstructChannelCallReturn<TMessages, TChannelInputSchema> => {
   if (channelInputSchema === undefined) {
     return genericObjectEntries(messages).reduce((prev, [messageKey, message]) => {
@@ -124,6 +181,7 @@ const constructChannelCall = <
           channelKey,
           messageInputSchema: message._messageInputSchema,
           subscribePayloadSchema: message._subscriptionInputSchema,
+          pusher,
         },
         messageKey as string
       ) as any;
@@ -135,8 +193,8 @@ const constructChannelCall = <
     >;
   }
 
-  return ((input: ZodInferIfDefined<TChannelInputSchema>) =>
-    genericObjectEntries(messages).reduce((prev, [messageKey, message]) => {
+  return ((input: ZodInferIfDefined<TChannelInputSchema>) => {
+    return genericObjectEntries(messages).reduce((prev, [messageKey, message]) => {
       // TODO: validate input
 
       prev[messageKey] = constructMessageCall(
@@ -145,15 +203,14 @@ const constructChannelCall = <
           channelKey,
           messageInputSchema: message._messageInputSchema,
           subscribePayloadSchema: message._subscriptionInputSchema,
+          pusher,
         },
         messageKey as string
       ) as any;
 
       return prev;
-    }, {} as { [key in keyof TMessages]: ConstructMessageCallReturn<TMessages[key]["_messageInputSchema"], TMessages[key]["_subscriptionInputSchema"]> })) as ConstructChannelCallReturn<
-    TMessages,
-    TChannelInputSchema
-  >;
+    }, {} as { [key in keyof TMessages]: ConstructMessageCallReturn<TMessages[key]["_messageInputSchema"], TMessages[key]["_subscriptionInputSchema"]> });
+  }) as ConstructChannelCallReturn<TMessages, TChannelInputSchema>;
 };
 
 type RootChannels = Record<
@@ -167,12 +224,17 @@ export type Client<TRootChannels extends RootChannels> = {
   >;
 };
 
-export const createPusherClient = <TRootChannels extends RootChannels>(root: TRootChannels) => {
+export const createPusherClient = <TRootChannels extends RootChannels>(
+  root: TRootChannels,
+  pusher: PusherJs
+) => {
+  console.log(pusher);
   return genericObjectEntries(root).reduce((prev, [channelKey, channel]) => {
     prev[channelKey] = constructChannelCall(
       channelKey as string,
       channel._inner,
-      channel._channelInputSchema
+      channel._channelInputSchema,
+      pusher
     ) as any;
     return prev;
   }, {} as Client<TRootChannels>) as Client<TRootChannels>;

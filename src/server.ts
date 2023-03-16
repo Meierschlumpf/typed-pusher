@@ -1,6 +1,8 @@
 import Pusher from "pusher";
 import { z } from "zod";
 import { ChannelMessages, ChannelReturn, ChannelReturnWithInputSchema } from "./creator";
+import { genericObjectEntries } from "./helpers";
+import { generateKey } from "./keys";
 import {
   ChannelInput,
   ChannelInputSchema,
@@ -182,10 +184,8 @@ export type Server<TRootChannels extends RootChannels> = {
 
 export const createPusherServer = <TRootChannels extends RootChannels>(
   root: TRootChannels,
-  options: Pusher.Options
+  pusher: Pusher
 ) => {
-  const pusher = new Pusher(options);
-
   return genericObjectEntries(root).reduce((prev, [channelKey, channel]) => {
     prev[channelKey] = constructChannelCall(
       channelKey as string,

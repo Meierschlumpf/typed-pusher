@@ -1,5 +1,5 @@
-import { z } from "zod";
 import { ChannelInputSchema, MessageInputSchema, TriggerPayloadSchema } from "./zod";
+import { genericObjectEntries } from "./helpers";
 
 export type MessageReturn = ReturnType<typeof message>;
 export type InputReturn = ReturnType<MessageReturn["input"]>;

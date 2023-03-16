@@ -9,4 +9,4 @@ export type ChannelInput = ZodInferIfDefined<ChannelInputSchema>;
 export type MessageInputSchema = ZodSchema | undefined;
 export type MessageInput = ZodInferIfDefined<MessageInputSchema>;
 export type TriggerPayloadSchema = ZodSchema;
-export type SubscribePayloadSchema = TriggerPayloadSchema;
+export type SubscribePayloadSchema = ZodSchema;
